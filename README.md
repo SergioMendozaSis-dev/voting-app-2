@@ -4,7 +4,27 @@
 **Instancia:** Primer parcial  
 **Tema:** Contenerización e orquestación local de una aplicación distribuida
 
-Voting App: cinco servicios orquestados con Docker Compose. Cada aplicación tiene su propio Dockerfile y un README con el puerto y el `CMD` que usa la imagen.
+## Para qué sirve esta aplicación
+
+Voting App es una votación en tiempo real (Café vs Té). Un usuario entra a una página, elige una opción y, en otra pantalla, el curso ve cómo se actualizan los totales.
+
+Se usa para practicar **Docker** y **Compose**: no hay que escribir la lógica de negocio; hay que empaquetar cada servicio, conectarlos en una red y persistir datos con volúmenes.
+
+## Servicios
+
+Hay cinco servicios. Tres los construyes tú (Dockerfile) y dos salen de imágenes oficiales.
+
+| Servicio | Qué es | Para qué se usa aquí |
+|----------|--------|----------------------|
+| **Vote** | Web Flask (Python) | Pantalla para votar. Recibe el click y manda el voto a Redis. |
+| **Worker** | Proceso Node.js | Lee los votos de Redis y los guarda en PostgreSQL. |
+| **Result** | Web Node.js | Tablero en vivo. Lee PostgreSQL y muestra los porcentajes. |
+| **Redis 6** | Cola en memoria (imagen oficial) | Buffer entre Vote y Worker. Los votos no se pierden si Worker va un poco más lento. |
+| **PostgreSQL 15** | Base de datos (imagen oficial) | Almacén definitivo de los votos. |
+
+Flujo: **Vote → Redis → Worker → PostgreSQL → Result**.
+
+Cada app (`vote`, `worker`, `result`) tiene un README con el puerto y el `CMD` del Dockerfile.
 
 ```bash
 docker compose up --build
@@ -16,20 +36,6 @@ docker compose up --build
 | Result | http://localhost:5001 |
 | Worker (métricas) | http://localhost:5002 |
 
----
-
-## Arquitectura
-
-| Servicio | Rol |
-|----------|-----|
-| **Vote** | Web Flask. El usuario elige la opción A o B. El voto se encola en Redis. |
-| **Worker** | Proceso Node.js. Lee la cola de Redis y persiste cada voto en PostgreSQL. |
-| **Result** | Web Node.js. Lee PostgreSQL y publica los totales por WebSockets. |
-| **Redis** | Cola de mensajes entre Vote y Worker. |
-| **PostgreSQL** | Almacén de los votos. |
-
-Flujo: **Vote → Redis → Worker → PostgreSQL → Result**.
-
 Red: `voting`. Volúmenes: `pgdata` (PostgreSQL) y `redisdata` (Redis).
 
 ---
@@ -39,15 +45,15 @@ Red: `voting`. Volúmenes: `pgdata` (PostgreSQL) y `redisdata` (Redis).
 ```text
 .
 ├── vote/
-│   ├── Dockerfile
+│   ├── Dockerfile           ← CREAR
 │   └── README.md            # puerto 80 → 8080, CMD gunicorn
 ├── worker/
-│   ├── Dockerfile
+│   ├── Dockerfile           ← CREAR
 │   └── README.md            # puerto 3000 → 5002, CMD node main.js
 ├── result/
-│   ├── Dockerfile
+│   ├── Dockerfile           ← CREAR
 │   └── README.md            # puerto 3000 → 5001, CMD node main.js
-├── compose.yml
+├── compose.yml              ← CREAR
 └── README.md
 ```
 
@@ -125,52 +131,25 @@ Ver [result/README.md](result/README.md).
 - Puerto interno: **3000** (host **5001**).
 - `CMD`: `node main.js`
 
-### Redis (no se vio en clase)
+### Redis 6
 
-Redis no se trabajó en la materia. No hay que programarlo ni escribir un Dockerfile: se usa la **imagen oficial** y Compose la levanta.
+Misma idea que en el ejemplo de clase: imagen oficial, hostname, puerto y volumen. **Usar Redis 6** (`redis:6`). No usar `latest`. Puerto **6379**.
 
-Es una base en memoria. En esta app **no guarda el resultado final**: funciona como **cola** entre Vote y Worker.
-
-1. Vote hace `RPUSH` en la lista `votes` (mete el voto al final).
-2. Worker hace `LPOP` de esa misma lista (saca el voto del principio).
-3. Recién ahí el Worker lo escribe en PostgreSQL.
-
-Si Redis está caído, Vote no puede encolar y Worker no tiene de dónde leer. Por eso Vote y Worker dependen de él (`depends_on` + healthcheck).
+No hace falta Dockerfile; en Compose basta `image: redis:6`.
 
 | | |
 |---|---|
-| Imagen | `redis:6` (versión **6**, no `latest`) |
-| Puerto interno | **6379** (el default de Redis; no se cambia) |
+| Imagen | `redis:6` |
+| Puerto interno | **6379** |
 | Puerto en el host | **6379** |
-| Hostname en la red | `redis` — ese es el valor de `REDIS_HOST` |
+| Hostname en la red | `redis` — valor de `REDIS_HOST` |
 | Volumen | `redisdata` → `/data` |
-| Dockerfile | no hace falta; `image: redis:6` alcanza |
 
-En `compose.yml` el servicio se declara así (no copies un Dockerfile de Python/Node para Redis):
+Vote y Worker se conectan con `REDIS_HOST=redis`. No hay usuario ni contraseña en este parcial.
 
-```yaml
-redis:
-  image: redis:6
-  ports:
-    - "6379:6379"
-  volumes:
-    - redisdata:/data
-  healthcheck:
-    test: ["CMD", "redis-cli", "ping"]
-    interval: 5s
-    timeout: 3s
-    retries: 5
-  networks:
-    - voting
-```
+### PostgreSQL 15
 
-`redis-cli ping` debe responder `PONG`. Si el healthcheck falla, Vote y Worker no arrancan.
-
-Documentación: [Redis Docker Hub](https://hub.docker.com/_/redis) · [Listas RPUSH / LPOP](https://redis.io/docs/latest/commands/rpush/)
-
-### PostgreSQL 15 (sí se vio en clase)
-
-Es la misma idea que en las prácticas: imagen oficial, usuario, contraseña, nombre de BD y volumen. **La versión de este parcial es PostgreSQL 15** (`postgres:15`). No usar `postgres:16` ni `latest`.
+Imagen oficial, usuario, contraseña, nombre de BD y volumen. **Usar PostgreSQL 15** (`postgres:15`). No usar `postgres:16` ni `latest`. Puerto **5432**.
 
 | | |
 |---|---|
@@ -186,9 +165,7 @@ Es la misma idea que en las prácticas: imagen oficial, usuario, contraseña, no
 | `POSTGRES_PASSWORD` | `postgres` | `DATABASE_PASSWORD` |
 | `POSTGRES_DB` | `votes` | `DATABASE_NAME` |
 
-El Worker crea la tabla `votes` si no existe. Result y Vote solo se conectan; no hace falta un script SQL inicial.
-
-El volumen `pgdata` es el que conserva los votos al hacer `docker compose down` y volver a levantar. `docker compose down -v` borra ese dato.
+El Worker crea la tabla `votes` si no existe. El volumen `pgdata` conserva los votos al hacer `docker compose down` y volver a levantar. `docker compose down -v` borra ese dato.
 
 ---
 
@@ -201,8 +178,8 @@ El volumen `pgdata` es el que conserva los votos al hacer `docker compose down` 
 
 ## Entregables
 
-| Entregable | Ubicación |
-|------------|-----------|
+| Entregable | Ubicación / formato |
+|------------|---------------------|
 | Dockerfile Vote | `vote/Dockerfile` |
 | README Vote | `vote/README.md` |
 | Dockerfile Worker | `worker/Dockerfile` |
@@ -210,6 +187,17 @@ El volumen `pgdata` es el que conserva los votos al hacer `docker compose down` 
 | Dockerfile Result | `result/Dockerfile` |
 | README Result | `result/README.md` |
 | Compose | `compose.yml` |
+| Documento de evidencia | PDF o similar (ver abajo) |
+
+### Documento (obligatorio)
+
+Además del código, entregar **un documento** (PDF) que incluya:
+
+1. **Capturas de la terminal de Docker** — por ejemplo `docker compose up --build`, `docker compose ps` o los logs con los cinco contenedores en ejecución.
+2. **Capturas de las aplicaciones levantadas** — Vote (`http://localhost:8080`) y Result (`http://localhost:5001`), con un voto visible en el tablero.
+3. **Link del repositorio** — URL del **fork** propio (no el repo original). El trabajo se entrega sobre ese fork.
+
+El link del repo va **en el mismo documento**, junto a las capturas.
 
 ---
 
