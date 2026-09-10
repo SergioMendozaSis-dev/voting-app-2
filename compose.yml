@@ -1,0 +1,78 @@
+services:
+  vote:
+    build: ./vote
+    ports:
+      - "8080:80"
+    environment:
+      REDIS_HOST: redis
+      OPTION_A: "Café"
+      OPTION_B: "Té"
+      DATABASE_HOST: database
+      DATABASE_USER: postgres
+      DATABASE_PASSWORD: postgres
+      DATABASE_NAME: votes
+    depends_on:
+      - redis
+      - database
+    networks:
+      - voting
+
+  worker:
+    build: ./worker
+    ports:
+      - "5002:3000"
+    environment:
+      REDIS_HOST: redis
+      DATABASE_HOST: database
+      DATABASE_USER: postgres
+      DATABASE_PASSWORD: postgres
+      DATABASE_NAME: votes
+    depends_on:
+      - redis
+      - database
+    networks:
+      - voting
+
+  result:
+    build: ./result
+    ports:
+      - "5001:3000"
+    environment:
+      DATABASE_HOST: database
+      DATABASE_USER: postgres
+      DATABASE_PASSWORD: postgres
+      DATABASE_NAME: votes
+      APP_PORT: 3000
+    depends_on:
+      - database
+    networks:
+      - voting
+
+  redis:
+    image: redis:6
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    networks:
+      - voting
+
+  database:
+    image: postgres:15
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: votes
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - voting
+
+networks:
+  voting:
+
+volumes:
+  pgdata:
+  redisdata:

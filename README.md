@@ -171,7 +171,7 @@ El Worker crea la tabla `votes` si no existe. El volumen `pgdata` conserva los v
 
 ## Orden de arranque y red
 
-- PostgreSQL y Redis arrancan primero (`depends_on` + healthcheck).
+- PostgreSQL y Redis arrancan primero; los demás servicios los esperan con `depends_on`.
 - Todos los servicios usan la red `voting` y se resuelven por nombre (`redis`, `database`).
 
 ---
