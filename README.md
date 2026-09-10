@@ -216,6 +216,4 @@ El link del repo va **en el mismo documento**, junto a las capturas.
 
 - [Docker](https://docs.docker.com/)
 - [Docker Compose](https://docs.docker.com/compose/)
-- [Dockerfile reference](https://docs.docker.com/reference/dockerfile/)
-
-Aplicación basada en el [Docker Example Voting App](https://github.com/dockersamples/example-voting-app), adaptada para el primer parcial de Computación en la Nube.
+- [Dockerfile reference]
